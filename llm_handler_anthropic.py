@@ -98,18 +98,92 @@ MODELS = {
 class AnthropicHandler:
     """Handler cho Anthropic API với streaming support"""
     
-    def __init__(self, api_key: str = ANTHROPIC_API_KEY):
+    def __init__(self, api_key: str = None):
         """
         Khởi tạo Anthropic client
         
         Args:
-            api_key: Anthropic API key
+            api_key: Anthropic API key (optional)
+        """
+        self.api_key = api_key or ANTHROPIC_API_KEY
+        self.client = None
+        if self.api_key:
+            self._initialize_client()
+    
+    def _initialize_client(self):
+        """Khởi tạo Anthropic client với API key"""
+        try:
+            self.client = anthropic.Anthropic(api_key=self.api_key)
+            logger.info("Anthropic client đã được khởi tạo")
+        except Exception as e:
+            logger.error(f"Lỗi khởi tạo Anthropic client: {str(e)}")
+            self.client = None
+    
+    def set_api_key(self, api_key: str) -> bool:
+        """
+        Thiết lập API key mới
+        
+        Args:
+            api_key: API key mới
+            
+        Returns:
+            True nếu thành công, False nếu thất bại
         """
         if not api_key:
-            raise ValueError("API key không được cung cấp")
+            return False
         
-        self.client = anthropic.Anthropic(api_key=api_key)
-        logger.info("Anthropic client đã được khởi tạo")
+        self.api_key = api_key
+        self._initialize_client()
+        return self.client is not None
+    
+    def is_ready(self) -> bool:
+        """
+        Kiểm tra xem handler đã sẵn sàng sử dụng chưa
+        
+        Returns:
+            True nếu client đã được khởi tạo, False nếu chưa
+        """
+        return self.client is not None and self.api_key is not None
+    
+    def test_api_key(self) -> Dict[str, Any]:
+        """
+        Test API key bằng cách gọi một request đơn giản
+        
+        Returns:
+            Dictionary chứa kết quả test
+        """
+        if not self.is_ready():
+            return {
+                "success": False,
+                "error": "Client chưa được khởi tạo hoặc API key chưa được set"
+            }
+        
+        try:
+            # Test với một request đơn giản
+            response = self.client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=10,
+                messages=[{"role": "user", "content": "Hi"}]
+            )
+            return {
+                "success": True,
+                "message": "API key hợp lệ"
+            }
+        except anthropic.AuthenticationError:
+            return {
+                "success": False,
+                "error": "API key không hợp lệ"
+            }
+        except anthropic.APIError as e:
+            return {
+                "success": False,
+                "error": f"Lỗi API: {str(e)}"
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Lỗi không mong muốn: {str(e)}"
+            }
     
     def get_available_models(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -277,6 +351,9 @@ class AnthropicHandler:
         Returns:
             Response text
         """
+        if not self.is_ready():
+            return "❌ Lỗi: API key chưa được cung cấp hoặc không hợp lệ. Vui lòng nhập API key trong sidebar."
+        
         try:
             params = self._build_request_params(
                 model, messages, system_prompt, max_tokens, 
@@ -330,6 +407,10 @@ class AnthropicHandler:
         Yields:
             Từng chunk của response
         """
+        if not self.is_ready():
+            yield "❌ Lỗi: API key chưa được cung cấp hoặc không hợp lệ. Vui lòng nhập API key trong sidebar."
+            return
+        
         try:
             params = self._build_request_params(
                 model, messages, system_prompt, max_tokens, 
@@ -389,5 +470,5 @@ class AnthropicHandler:
         
         return f"{display_name} - {description}"
 
-# Instance mặc định để sử dụng
+# Instance mặc định để sử dụng - không khởi tạo với API key
 anthropic_handler = AnthropicHandler()

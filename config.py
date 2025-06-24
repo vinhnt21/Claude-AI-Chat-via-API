@@ -3,9 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+
 
 
 # Default Configuration
@@ -28,9 +26,25 @@ DEFAULT_MODEL = "claude-3-haiku-20240307"
 SIDEBAR_WIDTH = 300
 CHAT_INPUT_PLACEHOLDER = "Nhập tin nhắn của bạn..."
 
-# Validation
-if not ANTHROPIC_API_KEY:
-    raise ValueError("ANTHROPIC_API_KEY không được tìm thấy trong biến môi trường. Vui lòng tạo file .env và thêm ANTHROPIC_API_KEY=your_api_key")
-
 # Debug mode
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+
+# API Key validation function
+def validate_api_key(api_key: str) -> bool:
+    """
+    Kiểm tra tính hợp lệ cơ bản của API key
+    
+    Args:
+        api_key: API key cần kiểm tra
+        
+    Returns:
+        True nếu API key có vẻ hợp lệ, False nếu không
+    """
+    if not api_key or not isinstance(api_key, str):
+        return False
+    
+    # Anthropic API key thường bắt đầu với "sk-ant-"
+    if api_key.startswith("sk-ant-") and len(api_key) > 20:
+        return True
+    
+    return False

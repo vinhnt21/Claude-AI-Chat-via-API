@@ -8,7 +8,7 @@ from llm_handler_anthropic import anthropic_handler, MODELS
 from config import (
     PAGE_TITLE, PAGE_ICON, DEFAULT_MODEL, DEFAULT_MAX_TOKENS, 
     DEFAULT_BUDGET_TOKENS, CHAT_INPUT_PLACEHOLDER, MAX_HISTORY_LENGTH,
-    DEFAULT_SYSTEM_PROMPT, DEBUG
+    DEFAULT_SYSTEM_PROMPT, DEBUG, validate_api_key
 )
 
 # Streamlit page configuration
@@ -43,8 +43,13 @@ def initialize_session_state():
         st.session_state.sync_flags = {
             "last_thinking_state": False
         }
-
-
+    
+    # Initialize API key state
+    if "api_key" not in st.session_state:
+        st.session_state.api_key = ""
+    
+    if "api_key_valid" not in st.session_state:
+        st.session_state.api_key_valid = False
 
 def handle_thinking_temperature_sync(thinking_enabled, current_thinking):
     """Xử lý đồng bộ temperature khi thinking mode thay đổi"""
@@ -62,10 +67,101 @@ def handle_thinking_temperature_sync(thinking_enabled, current_thinking):
             if "saved_temperature" in st.session_state:
                 st.session_state.model_settings["temperature"] = st.session_state.saved_temperature
 
+def render_api_key_section():
+    """Render phần nhập API key"""
+    st.subheader("🔑 API Key")
+    
+    # API Key input
+    api_key_input = st.text_input(
+        "Anthropic API Key:",
+        value=st.session_state.api_key,
+        type="password",
+        placeholder="sk-ant-...",
+        help="Nhập API key từ Anthropic Console",
+        key="api_key_input"
+    )
+    
+    # Update session state nếu có thay đổi
+    if api_key_input != st.session_state.api_key:
+        st.session_state.api_key = api_key_input
+        st.session_state.api_key_valid = False  # Reset validation status
+    
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        if st.button("🔍 Kiểm tra API Key", use_container_width=True):
+            if st.session_state.api_key:
+                with st.spinner("Đang kiểm tra API key..."):
+                    # Set API key vào handler
+                    success = anthropic_handler.set_api_key(st.session_state.api_key)
+                    if success:
+                        # Test API key
+                        test_result = anthropic_handler.test_api_key()
+                        if test_result["success"]:
+                            st.session_state.api_key_valid = True
+                            st.success("✅ API key hợp lệ!")
+                        else:
+                            st.session_state.api_key_valid = False
+                            st.error(f"❌ {test_result['error']}")
+                    else:
+                        st.session_state.api_key_valid = False
+                        st.error("❌ Không thể khởi tạo client với API key này")
+            else:
+                st.warning("⚠️ Vui lòng nhập API key trước")
+    
+    with col2:
+        if st.button("🗑️ Xóa API Key", use_container_width=True):
+            st.session_state.api_key = ""
+            st.session_state.api_key_valid = False
+            st.info("🗑️ Đã xóa API key")
+            st.rerun()
+    
+    # Hiển thị trạng thái API key
+    if st.session_state.api_key:
+        if st.session_state.api_key_valid:
+            st.success("🟢 API key đã được xác thực và sẵn sàng sử dụng")
+        else:
+            # Tự động kiểm tra basic validation
+            if validate_api_key(st.session_state.api_key):
+                st.info("🟡 API key có định dạng hợp lệ. Nhấn 'Kiểm tra API Key' để xác thực với server.")
+            else:
+                st.error("🔴 API key có định dạng không hợp lệ")
+    else:
+        st.warning("⚠️ Chưa có API key. Vui lòng nhập API key để sử dụng ứng dụng.")
+    
+    # Hướng dẫn lấy API key
+    with st.expander("📖 Hướng dẫn lấy API key", expanded=False):
+        st.markdown("""
+        **Cách lấy Anthropic API Key:**
+        
+        1. 🌐 Truy cập [Anthropic Console](https://console.anthropic.com/)
+        2. 📝 Đăng ký hoặc đăng nhập tài khoản
+        3. 🔑 Vào phần "API Keys" 
+        4. ➕ Tạo API key mới
+        5. 📋 Copy API key (bắt đầu với `sk-ant-`)
+        6. 📝 Dán vào ô input ở trên
+        
+        **Lưu ý bảo mật:**
+        - 🔒 Không chia sẻ API key với người khác
+        - 💻 API key chỉ được lưu trong session hiện tại
+        - 🔄 Mỗi lần reload trang cần nhập lại
+        """)
+
 def render_sidebar():
     """Render sidebar với các tùy chọn cấu hình"""
     with st.sidebar:
         st.header("⚙️ Cấu hình")
+        
+        # API Key Section - Luôn hiển thị đầu tiên
+        render_api_key_section()
+        
+        # Kiểm tra API key trước khi hiển thị các tùy chọn khác
+        if not st.session_state.api_key_valid:
+            st.divider()
+            st.info("🔒 Vui lòng nhập và xác thực API key để sử dụng các tính năng bên dưới.")
+            return  # Không hiển thị các tùy chọn khác nếu chưa có API key hợp lệ
+        
+        st.divider()
         
         # Model Selection
         st.subheader("🤖 Chọn Model")
@@ -230,6 +326,11 @@ def render_sidebar():
             - Sử dụng input number để nhập giá trị chính xác
             - Hệ thống sẽ tự động điều chỉnh nếu không hợp lệ
             - Giao diện tối ưu để giảm reload trang
+            
+            **API Key Security:**
+            - API key chỉ lưu trong session hiện tại
+            - Không được gửi hoặc lưu trữ ở server
+            - Mỗi lần reload cần nhập lại
             """)
         
         st.divider()
@@ -280,21 +381,47 @@ def render_chat_interface():
     """Render giao diện chat chính"""
     st.title(f"{PAGE_ICON} {PAGE_TITLE}")
     
+    # Kiểm tra API key trước khi hiển thị chat
+    if not st.session_state.api_key_valid:
+        st.warning("⚠️ **Cần API key để sử dụng chat.** Vui lòng nhập và xác thực API key trong sidebar bên trái.")
+        
+        # Hiển thị hướng dẫn nhanh
+        with st.expander("🚀 Hướng dẫn nhanh", expanded=True):
+            st.markdown("""
+            **Để bắt đầu chat:**
+            1. 🔑 Mở sidebar bên trái (nếu đang đóng)
+            2. 📝 Nhập Anthropic API key vào ô "API Key"
+            3. ✅ Nhấn "Kiểm tra API Key" để xác thực
+            4. 💬 Bắt đầu chat khi thấy thông báo màu xanh
+            
+            **Lấy API key miễn phí:**
+            - 🌐 Truy cập [Anthropic Console](https://console.anthropic.com/)
+            - 📝 Đăng ký tài khoản nếu chưa có
+            - 🔑 Tạo API key mới trong phần "API Keys"
+            """)
+        return
+    
     # Hiển thị thông tin model hiện tại
     current_model = st.session_state.model_settings["model"]
     model_display = anthropic_handler.format_model_display(current_model)
     
     st.info(f"🤖 Đang sử dụng: **{model_display}** | "
            f"Streaming: {'✅' if st.session_state.model_settings['use_streaming'] else '❌'} | "
-           f"Thinking: {'🧠' if st.session_state.model_settings['thinking'] else '❌'}")
+           f"Thinking: {'🧠' if st.session_state.model_settings['thinking'] else '❌'} | "
+           f"API: {'🟢 Ready' if st.session_state.api_key_valid else '🔴 Not Ready'}")
     
     # Hiển thị lịch sử chat
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
     
-    # Input từ user
-    if prompt := st.chat_input(CHAT_INPUT_PLACEHOLDER):
+    # Input từ user - chỉ hiển thị khi có API key hợp lệ
+    if prompt := st.chat_input(CHAT_INPUT_PLACEHOLDER, disabled=not st.session_state.api_key_valid):
+        # Đảm bảo API key vẫn còn hợp lệ trước khi xử lý
+        if not st.session_state.api_key_valid:
+            st.error("❌ API key không hợp lệ. Vui lòng kiểm tra lại trong sidebar.")
+            return
+            
         # Giới hạn độ dài lịch sử
         if len(st.session_state.messages) >= MAX_HISTORY_LENGTH:
             st.session_state.messages = st.session_state.messages[-(MAX_HISTORY_LENGTH-2):]
@@ -384,7 +511,7 @@ def generate_response():
 
 def render_welcome_message():
     """Hiển thị thông báo chào mừng khi chưa có tin nhắn"""
-    if not st.session_state.messages:
+    if not st.session_state.messages and st.session_state.api_key_valid:
         st.markdown("""
         ### 👋 Chào mừng bạn đến với Claude AI Chat!
         
@@ -401,15 +528,17 @@ def render_welcome_message():
         - 🧠 **Thinking Mode**: Lưu và khôi phục temperature khi chuyển đổi
         - ⚡ **Streamlined UI**: Chỉ sử dụng input để tránh reload nhiều lần
         - 📊 **Visual Warnings**: Hiển thị cảnh báo validation trực quan
+        - 🔑 **Session-based API Key**: API key an toàn chỉ trong session hiện tại
         
         **Cách sử dụng:**
         - 🔢 **Input Fields**: Nhập giá trị trực tiếp cho các tham số
         - 💾 **Auto Save**: Temperature được lưu khi bật thinking và khôi phục khi tắt
         - ⚠️ **Smart Validation**: Hệ thống tự động kiểm tra và điều chỉnh nếu cần
+        - 🔒 **Security**: API key chỉ lưu trong session, không gửi ra ngoài
         
         **Bắt đầu trò chuyện bằng cách nhập tin nhắn ở bên dưới!** 👇
         
-        *Lưu ý: Hệ thống sẽ tự động điều chỉnh các tham số để tuân thủ quy tắc API của Anthropic. Giao diện đã được tối ưu để giảm reload trang.*
+        *Lưu ý: Hệ thống sẽ tự động điều chỉnh các tham số để tuân thủ quy tắc API của Anthropic. API key chỉ được sử dụng trong session hiện tại và không được lưu trữ.*
         """)
 
 def main():
