@@ -1,0 +1,7 @@
+streamlit
+openai
+anthropic
+google-generativeai
+pypdf
+python-dotenv 
+typing-extensions
