@@ -1,10 +1,7 @@
 import os
-from dotenv import load_dotenv
 
-load_dotenv()
-
-
-
+# API Keys - để None để buộc người dùng nhập qua UI
+ANTHROPIC_API_KEY = None
 
 # Default Configuration
 DEFAULT_MAX_TOKENS = 2000
